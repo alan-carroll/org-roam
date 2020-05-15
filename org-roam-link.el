@@ -160,19 +160,21 @@ Parses out link-tags, if present"
             (t
              'org-roam-link-invalid)))))
 
-
 (defun org-roam-link--find-file (title)
   "Find and open an Org-roam file based on its TITLE/ALIAS.
 TITLE is TITLE/ALIAS of potential Org-roam note.
 If TITLE doesn't match an existing note, prompt Org-roam
-note creation using `org-roam-capture--capture'"
-  (let* ((file-path (org-roam--get-file-from-title title)))
+note creation using `org-roam-capture--capture'.
+TITLE is first parsed to separate potential link-tags associated
+with roam-link PATHs."
+  (let* ((title-no-tags (org-roam-link--parse-title-and-tags title))
+         (file-path (org-roam--get-file-from-title title-no-tags)))
     (if file-path
         (find-file file-path)
       (if (org-roam-capture--in-process-p)
           (user-error "Org-roam capture in process")
-        (let ((org-roam-capture--info (list (cons 'title title)
-                                            (cons 'slug (org-roam--title-to-slug title))))
+        (let ((org-roam-capture--info (list (cons 'title title-no-tags)
+                                            (cons 'slug (org-roam--title-to-slug title-no-tags))))
               (org-roam-capture--context 'title))
           (add-hook 'org-capture-after-finalize-hook #'org-roam-capture--find-file-h)
           (org-roam-capture--capture))))))
