@@ -290,7 +290,10 @@ it as FILE-PATH."
                                  "cite")
                                 (t nil)))
                ;; Skip roam-link if its corresponding file doesn't exist
-               (roam-file (if (string= link-type "roam") (org-roam--get-file-from-title path) t)))
+               ;; Potential link-tags are parsed from roam-link PATH before checking file existence
+               (roam-file (if (string= link-type "roam")
+                              (org-roam--get-file-from-title (org-roam-link--parse-title-and-tags path))
+                            t)))
           (when (and link-type roam-file)
             (goto-char start)
             (let* ((element (org-element-at-point))
