@@ -75,6 +75,18 @@
   "Face for roam: link brackets."
   :group 'org-roam-faces)
 
+(defface org-roam-link-tags
+  '((t :inherit org-link))
+  "Face for roam: link tags."
+  :group 'org-roam-faces)
+
+(defun org-roam-link--parse-title-and-tags (path)
+  "Return the TITLE from a roam-link PATH without its (potential) link-tags.
+Currently only a single tag is allowed!"
+  (if (string-match "\\(.+\\)?\\(::.+\\)" path)
+      (match-string 1 path)
+    path))
+
 (defun org-roam-link--activate (start end _path bracketp)
   "Hides roam: link prefix and determines additional font-locking.
 Optionally hide brackets before/after the link, or change their face.
@@ -87,7 +99,7 @@ link has brackets."
     (save-excursion
       (save-match-data
         (goto-char start)
-        (re-search-forward "\\(\\[\\[\\)\\(roam:\\).+\\(\\]\\]\\)" end t)
+        (re-search-forward "\\(\\[\\[\\)\\(roam:\\).+?\\(::.+\\)?\\(\\]\\]\\)" end t)
         ;; Optionally hide starting brackets or change their face
         ;; Can't set invisible with org-roam-link-show-brackets directly
         (add-text-properties
@@ -111,11 +123,14 @@ link has brackets."
                    (goto-char start)
                    (re-search-forward org-link-bracket-re end t)
                    (add-text-properties (match-beginning 2) (match-end 2) '(invisible nil)))))
+        ;; If any link-tags, change their face
+        (when (match-string 3)
+            (add-text-properties (match-beginning 3) (match-end 3) '(face org-roam-link-tags)))
         ;; Optionally ending hide brackets or change their face
         ;; Can't set invisible with org-roam-link-roam-brackets directly
         (add-text-properties
-         (match-beginning 3)
-         (match-end 3)
+         (match-beginning 4)
+         (match-end 4)
          (if org-roam-link-show-brackets
              '(face org-roam-link-brackets invisible nil)
            '(face org-roam-link-brackets invisible t)))))))
@@ -133,14 +148,18 @@ Applies `org-roam-link-current' if PATH corresponds to the
 currently opened Org-roam file in the backlink buffer,
 `org-roam-link' if PATH corresponds to any other Org-roam
 TITLE/ALIAS in the Org-roam database, or `org-roam-link-invalid'
-otherwise."
-  (cond ((and (org-roam--in-buffer-p)
-              (org-roam-link--backlink-to-current-p path))
-         'org-roam-link-current)
-        ((org-roam--org-roam-title-p path)
-         'org-roam-link)
-        (t
-         'org-roam-link-invalid)))
+otherwise.
+Parses out link-tags, if present"
+  (save-match-data
+    (let ((title (org-roam-link--parse-title-and-tags path)))
+      (cond ((and (org-roam--in-buffer-p)
+                  (org-roam-link--backlink-to-current-p title))
+             'org-roam-link-current)
+            ((org-roam--org-roam-title-p title)
+             'org-roam-link)
+            (t
+             'org-roam-link-invalid)))))
+
 
 (defun org-roam-link--find-file (title)
   "Find and open an Org-roam file based on its TITLE/ALIAS.
