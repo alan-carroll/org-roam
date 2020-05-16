@@ -81,11 +81,19 @@
   :group 'org-roam-faces)
 
 (defun org-roam-link--parse-title-and-tags (path)
-  "Return the TITLE from a roam-link PATH without its (potential) link-tags.
-Currently only a single tag is allowed!"
-  (if (string-match "\\(.+\\)?\\(::.+\\)" path)
-      (match-string 1 path)
-    path))
+  "Return TITLE and potential LINK-TAGS from a roam-link PATH as a list.
+LINK-TAGS are parsed and split on double colons, ::.
+TITLE is `car' of list, and LINK-TAGS are `cdr'.
+If no tags are present in the PATH, `cdr' is nil.
+Only parse if PATH is sufficiently long to include tags."
+  (if (> (length path) 3)
+      (save-match-data
+        (string-match "\\(.[^:\{2\}]+\\)\\(.+\\)?" path)
+        (let* ((title (match-string 1 path))
+               (tags-str (match-string 2 path))
+               (tags (if tags-str (split-string tags-str "::" t) nil)))
+          (cons title tags)))
+    (cons path nil)))
 
 (defun org-roam-link--activate (start end _path bracketp)
   "Hides roam: link prefix and determines additional font-locking.
@@ -99,7 +107,7 @@ link has brackets."
     (save-excursion
       (save-match-data
         (goto-char start)
-        (re-search-forward "\\(\\[\\[\\)\\(roam:\\).+?\\(::.+\\)?\\(\\]\\]\\)" end t)
+        (re-search-forward "\\(\\[\\[\\)\\(roam:\\).+?\\(::.*\\)?\\(\\]\\]\\)" end t)
         ;; Optionally hide starting brackets or change their face
         ;; Can't set invisible with org-roam-link-show-brackets directly
         (add-text-properties
@@ -151,7 +159,7 @@ TITLE/ALIAS in the Org-roam database, or `org-roam-link-invalid'
 otherwise.
 Parses out link-tags, if present"
   (save-match-data
-    (let ((title (org-roam-link--parse-title-and-tags path)))
+    (let ((title (car (org-roam-link--parse-title-and-tags path))))
       (cond ((and (org-roam--in-buffer-p)
                   (org-roam-link--backlink-to-current-p title))
              'org-roam-link-current)
@@ -167,7 +175,7 @@ If TITLE doesn't match an existing note, prompt Org-roam
 note creation using `org-roam-capture--capture'.
 TITLE is first parsed to separate potential link-tags associated
 with roam-link PATHs."
-  (let* ((title-no-tags (org-roam-link--parse-title-and-tags title))
+  (let* ((title-no-tags (car (org-roam-link--parse-title-and-tags title)))
          (file-path (org-roam--get-file-from-title title-no-tags)))
     (if file-path
         (find-file file-path)

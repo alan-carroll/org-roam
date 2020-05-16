@@ -292,7 +292,7 @@ it as FILE-PATH."
                ;; Skip roam-link if its corresponding file doesn't exist
                ;; Potential link-tags are parsed from roam-link PATH before checking file existence
                (roam-file (if (string= link-type "roam")
-                              (org-roam--get-file-from-title (org-roam-link--parse-title-and-tags path))
+                              (org-roam--get-file-from-title (car (org-roam-link--parse-title-and-tags path)))
                             t)))
           (when (and link-type roam-file)
             (goto-char start)
