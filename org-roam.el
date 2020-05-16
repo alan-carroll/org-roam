@@ -289,10 +289,13 @@ it as FILE-PATH."
                                   (-contains? org-ref-cite-types type))
                                  "cite")
                                 (t nil)))
+               ;; Testing out adding link-tags (only from roam-links for now)
+               (title-and-tags (org-roam-link--parse-title-and-tags path))
+               (link-tags (if (string= link-type "roam") (cdr title-and-tags) nil))
                ;; Skip roam-link if its corresponding file doesn't exist
                ;; Potential link-tags are parsed from roam-link PATH before checking file existence
                (roam-file (if (string= link-type "roam")
-                              (org-roam--get-file-from-title (car (org-roam-link--parse-title-and-tags path)))
+                              (org-roam--get-file-from-title (car title-and-tags))
                             t)))
           (when (and link-type roam-file)
             (goto-char start)
@@ -319,7 +322,9 @@ it as FILE-PATH."
                           (push (vector file-path
                                         name
                                         link-type
-                                        context)
+                                        context
+                                        ;;testing out creating the tags column
+                                        link-tags)
                                 links))
                         names)))))))
     links))

@@ -126,7 +126,8 @@ SQL can be either the emacsql vector representation, or a string."
      [(from :not-null)
       (to :not-null)
       (type :not-null)
-      (properties :not-null)])
+      (properties :not-null)
+      (tags)])
 
     (titles
      [(file :not-null)
