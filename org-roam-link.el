@@ -113,8 +113,8 @@ link has brackets."
              '(face org-roam-link-brackets invisible nil)
            '(face org-roam-link-brackets invisible t)))
         (add-text-properties
-         (match-beginning 3)
-         (match-end 3)
+         (match-beginning 4)
+         (match-end 4)
          (if org-roam-link-show-brackets
              '(face org-roam-link-brackets invisible nil)
            '(face org-roam-link-brackets invisible t)))
