@@ -88,11 +88,7 @@ If no tags are present in the PATH, `cdr' is nil.
 Only parse if PATH is sufficiently long to include tags."
   (if (> (length path) 3)
       (save-match-data
-        (string-match "\\(.[^:\{2\}]+\\)\\(.+\\)?" path)
-        (let* ((title (match-string 1 path))
-               (tags-str (match-string 2 path))
-               (tags (if tags-str (split-string tags-str "::" t) nil)))
-          (cons title tags)))
+        (split-string path "::" t))
     (cons path nil)))
 
 (defun org-roam-link--activate (start end _path bracketp)
