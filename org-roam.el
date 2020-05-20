@@ -919,6 +919,20 @@ for Org-ref cite links."
                       :order-by (asc from)]
                      target))
 
+(defun org-roam--get-backlinks-with-link-tags (target)
+  "Return the backlinks and link-tags for TARGET.
+TARGET may be a file, for Org-roam file links, or a citation key,
+for Org-ref cite links.
+Entries with multiple link-tags are converted to multple entries with
+single link-tags, and entries with no link-tags are removed."
+  (let* ((entries (org-roam-db-query [:select [from, to, properties, tags] :from links
+                                      :where (= to $s1)]
+                                     target))
+         (entries-single-tags (--mapcat
+                               (-table-flat '-concat (list (butlast it)) (car (last it))) entries)))
+    (--map (setcdr (last it) (cons (cdr (last it)) nil)) entries-single-tags)
+    entries-single-tags))
+
 (defun org-roam-store-link ()
   "Store a link to an `org-roam' file."
   (when (org-before-first-heading-p)

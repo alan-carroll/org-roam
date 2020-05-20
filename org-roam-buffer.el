@@ -47,6 +47,7 @@
 (declare-function org-roam--get-title-or-slug "org-roam")
 (declare-function org-roam--get-backlinks     "org-roam")
 (declare-function org-roam-backlinks-mode     "org-roam")
+(declare-function org-roam--get-backlinks-with-link-tags "org-roam")
 
 (defcustom org-roam-buffer-position 'right
   "Position of `org-roam' buffer.
@@ -80,6 +81,7 @@ Has an effect if and only if `org-roam-buffer-position' is `top' or `bottom'."
   :group 'org-roam)
 
 (defcustom org-roam-buffer-prepare-hook '(org-roam-buffer--insert-title
+                                          org-roam-buffer--insert-link-tags
                                           org-roam-buffer--insert-backlinks
                                           org-roam-buffer--insert-citelinks)
   "Hook run in the `org-roam-buffer' before it is displayed."
@@ -111,6 +113,45 @@ When non-nil, the window will not be closed when deleting other windows."
                                  `((listp integerp)
                                    ,wrong-type))))))
     (concat string (when (> l 1) "s"))))
+
+(defun org-roam-buffer--insert-link-tags ()
+  "Insert the org-roam-buffer link-tags string for the current buffer."
+  (if-let* ((file-path (buffer-file-name org-roam-buffer--current))
+            (backlinks (org-roam--get-backlinks-with-link-tags file-path))
+            ;; group-by link-tags
+            (grouped-backlinks (--group-by (nth 3 it) backlinks))
+            (sorted-backlinks (seq-sort-by #'car #'string< grouped-backlinks)))
+      (progn
+        (insert "\n\n")
+        (org-insert-heading)
+        (insert (let ((l (length sorted-backlinks)))
+                  (format "%d %s" l (org-roam-buffer--pluralize "Link-tag" l))))
+        (let (tag-start)
+          (dolist (group sorted-backlinks tag-start)
+            (let* ((link-tag (car group))
+                   (tag-bls (cdr group))
+                   (file-grouped-bls (--group-by (nth 0 it) tag-bls)))
+              (org-insert-heading)
+              (unless tag-start (progn (org-do-demote) (setq tag-start t)))
+              (insert (format "%d %s\n" (length tag-bls) link-tag))
+              (dolist (file-group file-grouped-bls)
+                (let ((bls (cdr file-group)))
+                  (dolist (backlink bls)
+                    (pcase-let ((`(,file-from _ ,props) backlink))
+                      (insert (format "[[file:%s][%s]]\n"
+                                      file-from
+                                      (org-roam--get-title-or-slug file-from)))
+                      (insert (propertize
+                               (s-trim (s-replace "\n" " "
+                                                  (plist-get props :content)))
+                               'help-echo "mouse-1: visit backlinked note"
+                               'file-from file-from
+                               'file-from-point (plist-get props :point)))
+                      (insert "\n\n")))))
+              (org-flag-subtree t)
+              (insert "\n")
+              ))))
+    (insert "\n\n* No Link-tags!")))
 
 (defun org-roam-buffer--insert-citelinks ()
   "Insert citation backlinks for the current buffer."
