@@ -53,6 +53,7 @@
 (declare-function org-roam--format-link                "org-roam")
 (declare-function org-roam--get-title-from-file        "org-roam")
 (declare-function org-roam--get-title-path-completions "org-roam")
+(declare-function org-roam-db-query                 "org-roam-db")
 
 ;;;; Customizable Variables
 (defcustom org-roam-link-use-roam-links nil
@@ -301,13 +302,40 @@ If called with PREFIX `C-u' then manual is non-nil."
        (-flatten)
        (-distinct)))
 
-(defun org-roam-link--completion (&optional _arg)
+(defun org-roam-link--completion (&optional add-tag)
   "Completion for roam-links in `org-mode'.
-ARG is optional prefix supplied through `org-mode'"
+ADD-TAG is non-nil when completion is called with prefix `C-u'."
   (let ((completions (org-roam--get-title-path-completions))
-        (in-buffer-completions (org-roam-link--current-buffer-roam-link-titles)))
-    (format "roam:%s" (completing-read "Roam note: "
-                                       (-union (map-keys completions) in-buffer-completions)))))
+        (in-buffer-completions (org-roam-link--current-buffer-roam-link-titles))
+        (link-tag-completions (when add-tag (-union (org-roam-link--get-link-tags-completions)
+                                                    (org-roam-link--current-buffer-link-tags)))))
+    (if add-tag
+        (format "roam:%s::%s"
+                (completing-read "Roam note: "
+                                 (-union (map-keys completions) in-buffer-completions))
+                (completing-read "Link-tag: " link-tag-completions))
+      (format "roam:%s" (completing-read "Roam note: "
+                                         (-union (map-keys completions) in-buffer-completions))))))
+
+(defun org-roam-link--current-buffer-link-tags ()
+  "Return a list of unique link-tags from the current buffer."
+  (->> (org-element-map (org-element-parse-buffer) 'link
+         (lambda (link)
+           (let ((type (org-element-property :type link))
+                 (path (org-element-property :path link)))
+             (when (string= type "roam")
+               (let ((link-tags (cdr (org-roam-link--parse-title-and-tags path)))
+                     res)
+                 (cons link-tags res))))))
+       (-flatten)
+       (-distinct)))
+
+(defun org-roam-link--get-link-tags-completions ()
+  "Return a list of link-tag completion candidates.
+Candidates are populated from the database and the current buffer"
+  (->> (org-roam-db-query [:select [tags] :from links])
+       (-flatten)
+       (-distinct)))
 
 (defun org-roam-link--status-message ()
   "Send roam-link status message to minibuffer."
@@ -344,10 +372,12 @@ Follows example of `org-ref' and displays on idle timer."
   (cancel-timer org-roam-link-message-timer)
   (setq org-roam-link-message-timer nil))
 
-(defun org-roam-link-insert-link ()
-  "Shortcut to insert roam-link with standard completion prompt."
-  (interactive)
-  (insert "[[" (org-roam-link--completion) "]]"))
+(defun org-roam-link-insert-link (&optional add-tag)
+  "Shortcut to insert roam-link with standard completion prompt.
+ADD-TAG is non-nil when called with prefix `C-u' and provides completion
+for a link-tag after adding the roam-link title."
+  (interactive "P")
+  (insert "[[" (org-roam-link--completion add-tag) "]]"))
 
 (defun org-roam-link-insert-syntax ()
   "Shortcut to insert roam-link syntax without completion.
