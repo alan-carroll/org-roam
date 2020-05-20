@@ -134,9 +134,10 @@ link has brackets."
                    (goto-char start)
                    (re-search-forward org-link-bracket-re end t)
                    (add-text-properties (match-beginning 2) (match-end 2) '(invisible nil)))))
-        ;; If any link-tags, change their face
+        ;; If any link-tags, change their face and add a property indicating their tag status
         (when (match-string 3)
-            (add-text-properties (match-beginning 3) (match-end 3) '(face org-roam-link-tags)))))))
+          (add-text-properties (match-beginning 3) (match-end 3)
+                               '(face org-roam-link-tags is-link-tag t)))))))
 
 (defun org-roam-link--backlink-to-current-p (path)
   "Return t if roam-link backlink is to the current Org-roam file.
@@ -295,10 +296,11 @@ If called with PREFIX `C-u' then manual is non-nil."
   (->> (org-element-map (org-element-parse-buffer) 'link
          (lambda (link)
            (let* ((type (org-element-property :type link))
-                  (path (org-element-property :path link))
-                  res)
+                  (path (org-element-property :path link)))
              (when (string= type "roam")
-               (cons path res)))))
+               (let ((title (car (org-roam-link--parse-title-and-tags path)))
+                     res)
+                 (cons title res))))))
        (-flatten)
        (-distinct)))
 
