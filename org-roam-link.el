@@ -188,20 +188,25 @@ with roam-link PATHs."
 ELEMENT is the `org-element-at-point'.
 Ignore roam-links that do not point to an existing Org-roam file."
   (let* ((path (org-element-property :path element))
-         (filename (org-roam--get-file-from-title path)))
+         (title-and-tags (org-roam-link--parse-title-and-tags path))
+         (title (car title-and-tags))
+         (filename (org-roam--get-file-from-title title)))
     (when filename
-      (let* ((start (org-element-property :begin element))
-             (end (org-element-property :end element))
-             (contents-begin (org-element-property :contents-begin element))
-             (contents-end (org-element-property :contents-end element))
-             (desc (and contents-begin contents-end
-                        (buffer-substring-no-properties contents-begin contents-end)))
-             (link-desc (if desc
-                            desc
-                          (org-roam--format-link-title path))))
-        (setf (buffer-substring start end)
-              (concat (org-roam--format-link filename link-desc)
-                      (make-string (org-element-property :post-blank element) ?\s)))))))
+      (save-match-data
+        (string-match (format "\\(%s\\)\\(.*\\)" title) path)
+        (let* ((link-tags (match-string-no-properties 2 path))
+               (start (org-element-property :begin element))
+               (end (org-element-property :end element))
+               (contents-begin (org-element-property :contents-begin element))
+               (contents-end (org-element-property :contents-end element))
+               (desc (and contents-begin contents-end
+                          (buffer-substring-no-properties contents-begin contents-end)))
+               (link-desc (if desc
+                              desc
+                            (org-roam--format-link-title title))))
+          (setf (buffer-substring start end)
+                (concat (org-roam--format-link filename (concat link-desc link-tags))
+                        (make-string (org-element-property :post-blank element) ?\s))))))))
 
 (defun org-roam-link--convert-file-to-roam-link (element)
   "Convert a standard org file-link to a custom roam-link.
