@@ -392,6 +392,21 @@ Move point inside brackets, ready for roam title entry."
   (interactive)
   (goto-char (org-element-property :end (org-element-context))))
 
+(defun org-roam-link-add-link-tag ()
+  "Prompt for link-tag completion and add to the end of the roam-link path."
+  (interactive)
+  (let* ((context (org-element-context))
+         (type (org-element-property :type context))
+         (path (org-element-property :path context))
+         (begin (org-element-property :begin context)))
+    (when (string= "roam" type)
+      (let ((link-tag (completing-read "Link-tag: "
+                                      (-union (org-roam-link--get-link-tags-completions)
+                                              (org-roam-link--current-buffer-link-tags)))))
+        (goto-char begin)
+        (re-search-forward path)
+        (insert (format "::%s" link-tag))))))
+
 (provide 'org-roam-link)
 
 ;;; org-roam-link.el ends here
