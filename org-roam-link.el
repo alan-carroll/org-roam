@@ -333,8 +333,7 @@ ADD-TAG is non-nil when completion is called with prefix `C-u'."
        (-distinct)))
 
 (defun org-roam-link--get-link-tags-completions ()
-  "Return a list of link-tag completion candidates.
-Candidates are populated from the database and the current buffer"
+  "Return a list of link-tag completion candidates from the database."
   (->> (org-roam-db-query [:select [tags] :from links])
        (-flatten)
        (-distinct)))
