@@ -5,8 +5,8 @@
 ;; Author: Jethro Kuan <jethrokuan95@gmail.com>
 ;; URL: https://github.com/org-roam/org-roam
 ;; Keywords: org-mode, roam, convenience
-;; Version: 1.1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.13") (f "0.17.2") (s "1.12.0") (org "9.3") (emacsql "3.0.0") (emacsql-sqlite "1.0.0"))
+;; Version: 1.1.1
+;; Package-Requires: ((emacs "26.1") (dash "2.13") (f "0.17.2") (s "1.12.0") (org "9.3") (emacsql "3.0.0") (emacsql-sqlite3 "1.0.0"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -41,6 +41,7 @@
 (defvar org-roam-backlinks-mode)
 (defvar org-roam-last-window)
 (defvar org-ref-cite-types) ;; in org-ref-core.el
+(defvar org-roam-mode)
 
 (declare-function org-roam-db--ensure-built   "org-roam-db")
 (declare-function org-roam--extract-ref       "org-roam")
@@ -48,6 +49,7 @@
 (declare-function org-roam--get-backlinks     "org-roam")
 (declare-function org-roam-backlinks-mode     "org-roam")
 (declare-function org-roam--get-backlinks-with-link-tags "org-roam")
+(declare-function org-roam-mode               "org-roam")
 
 (defcustom org-roam-buffer-position 'right
   "Position of `org-roam' buffer.
@@ -88,10 +90,10 @@ Has an effect if and only if `org-roam-buffer-position' is `top' or `bottom'."
   :type 'hook
   :group 'org-roam)
 
-(defcustom org-roam-buffer-no-delete-other-windows nil
-  "The `no-delete-other-windows' parameter of the `org-roam-buffer' window.
-When non-nil, the window will not be closed when deleting other windows."
-  :type 'boolean
+(defcustom org-roam-buffer-window-parameters nil
+  "Additional window parameters for the `org-roam-buffer' side window.
+For example: (setq org-roam-buffer-window-parameters '((no-other-window . t)))"
+  :type '(alist)
   :group 'org-roam)
 
 (defvar org-roam-buffer--current nil
@@ -155,32 +157,32 @@ When non-nil, the window will not be closed when deleting other windows."
 
 (defun org-roam-buffer--insert-citelinks ()
   "Insert citation backlinks for the current buffer."
-  (if-let* ((ref (with-temp-buffer
-                   (insert-buffer-substring org-roam-buffer--current)
-                   (org-roam--extract-ref)))
-            (org-ref-p (require 'org-ref nil t)) ; Ensure that org-ref is present
-            (key-backlinks (org-roam--get-backlinks (cdr ref)))
-            (grouped-backlinks (--group-by (nth 0 it) key-backlinks)))
-      (progn
-        (insert (let ((l (length key-backlinks)))
-                  (format "\n\n* %d %s\n"
-                          l (org-roam-buffer--pluralize "Cite backlink" l))))
-        (dolist (group grouped-backlinks)
-          (let ((file-from (car group))
-                (bls (cdr group)))
-            (insert (format "** [[file:%s][%s]]\n"
-                            file-from
-                            (org-roam--get-title-or-slug file-from)))
-            (dolist (backlink bls)
-              (pcase-let ((`(,file-from _ ,props) backlink))
-                (insert (propertize
-                         (s-trim (s-replace "\n" " "
-                                            (plist-get props :content)))
-                         'help-echo "mouse-1: visit backlinked note"
-                         'file-from file-from
-                         'file-from-point (plist-get props :point)))
-                (insert "\n\n"))))))
-    (insert "\n\n* No cite backlinks!")))
+  (when-let ((org-ref-p (require 'org-ref nil t)) ;; Ensure that org-ref is present
+             (ref (cdr (with-temp-buffer
+                        (insert-buffer-substring org-roam-buffer--current)
+                        (org-roam--extract-ref)))))
+    (if-let* ((key-backlinks (org-roam--get-backlinks ref))
+              (grouped-backlinks (--group-by (nth 0 it) key-backlinks)))
+        (progn
+          (insert (let ((l (length key-backlinks)))
+                    (format "\n\n* %d %s\n"
+                            l (org-roam-buffer--pluralize "Cite backlink" l))))
+          (dolist (group grouped-backlinks)
+            (let ((file-from (car group))
+                  (bls (cdr group)))
+              (insert (format "** [[file:%s][%s]]\n"
+                              file-from
+                              (org-roam--get-title-or-slug file-from)))
+              (dolist (backlink bls)
+                (pcase-let ((`(,file-from _ ,props) backlink))
+                  (insert (propertize
+                           (s-trim (s-replace "\n" " "
+                                              (plist-get props :content)))
+                           'help-echo "mouse-1: visit backlinked note"
+                           'file-from file-from
+                           'file-from-point (plist-get props :point)))
+                  (insert "\n\n"))))))
+      (insert "\n\n* No cite backlinks!"))))
 
 (defun org-roam-buffer--insert-backlinks ()
   "Insert the org-roam-buffer backlinks string for the current buffer."
@@ -283,8 +285,7 @@ Valid states are 'visible, 'exists and 'none."
 
 (defun org-roam-buffer--get-create ()
   "Set up the `org-roam' buffer at `org-roam-buffer-position'."
-  (let ((window (get-buffer-window))
-        (position
+  (let ((position
          (if (member org-roam-buffer-position '(right left top bottom))
              org-roam-buffer-position
            (let ((text-quoting-style 'grave))
@@ -292,21 +293,24 @@ Valid states are 'visible, 'exists and 'none."
                     "Invalid org-roam-buffer-position: %s. Defaulting to \\='right"
                     org-roam-buffer-position))
            'right)))
-    (-> (get-buffer-create org-roam-buffer)
-        (display-buffer-in-side-window
-         `((side . ,position)
-           (window-parameters . ((no-delete-other-windows . ,org-roam-buffer-no-delete-other-windows)))))
-        (select-window))
-    (pcase position
-      ((or 'right 'left)
-       (org-roam-buffer--set-width  (round (* (frame-width)  org-roam-buffer-width))))
-      ((or 'top  'bottom)
-       (org-roam-buffer--set-height (round (* (frame-height) org-roam-buffer-height)))))
-    (select-window window)))
+    (save-selected-window
+      (-> (get-buffer-create org-roam-buffer)
+          (display-buffer-in-side-window
+           `((side . ,position)
+             (window-parameters . ,org-roam-buffer-window-parameters)))
+          (select-window))
+      (pcase position
+        ((or 'right 'left)
+         (org-roam-buffer--set-width
+          (round (* (frame-width)  org-roam-buffer-width))))
+        ((or 'top  'bottom)
+         (org-roam-buffer--set-height
+          (round (* (frame-height) org-roam-buffer-height))))))))
 
 (defun org-roam-buffer-toggle-display ()
   "Toggle display of the `org-roam-buffer'."
   (interactive)
+  (unless org-roam-mode (org-roam-mode))
   (setq org-roam-last-window (get-buffer-window))
   (pcase (org-roam-buffer--visibility)
     ('visible (delete-window (get-buffer-window org-roam-buffer)))

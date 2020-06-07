@@ -56,21 +56,39 @@
 (declare-function org-roam-db-query                 "org-roam-db")
 
 ;;;; Customizable Variables
-(defcustom org-roam-link-use-roam-links nil
+(defcustom org-roam-link-enabled nil
   "When t `org-roam-insert' inserts roam-link instead of org file-link."
   :type 'boolean
   :group 'org-roam)
 
-(defcustom org-roam-link-show-brackets nil
-  "Whether to show brackets around [[roam:]] links."
+(defcustom org-roam-link-hide-brackets t
+  "Whether to hide brackets around [[roam:]] links."
   :type 'boolean
   :group 'org-roam)
 
 ;;;; Dynamic variables
 (defvar org-roam-link-message-timer nil
-  "Set by `org-roam-link-show-link-messages' or `org-roam-link-cancel-link-messages'.")
+  "Set by `org-roam-link-show-messages' or `org-roam-link-cancel-messages'.")
 
 ;;;; Custom org-link, roam:
+(defvar org-roam-link-auto-template-key nil
+  "Template key for `org-roam-capture-templates' to use for auto file creation.
+Template MUST use :immediate-finish t or only first capture will be saved.")
+
+(defvar org-roam-link-auto-template
+'(("a" "Automatic" plain (function org-roam--capture-get-point)
+     ""
+     :file-name "%<%Y%m%d%H%M%S>-${slug}"
+     :head "#+TITLE: ${title}\n#+AUTOMATICALLY_CREATED: %<%Y%m%d%H%M%S>\n"
+     :unnarrowed t
+     :immediate-finish t))
+  "Default auto-template for use with `org-roam-link--auto-create-file'.
+Used if `org-roam-link-auto-template-key' is nil.")
+
+(defvar org-roam-link--re
+  "\\(\\[\\[\\)\\(roam:\\).*\\(\\]\\]\\)"
+  "Matches a 'roam:' link in double brackets.")
+
 (defface org-roam-link-brackets
   '((t :inherit org-link))
   "Face for roam: link brackets."
@@ -106,19 +124,14 @@ link has brackets."
         (goto-char start)
         (re-search-forward "\\(\\[\\[\\)\\(roam:\\).*?\\(::.*\\)?\\(\\]\\]\\)" end t)
         ;; Optionally hide starting brackets or change their face
-        ;; Can't set invisible with org-roam-link-show-brackets directly
         (add-text-properties
          (match-beginning 1)
          (match-end 1)
-         (if org-roam-link-show-brackets
-             '(face org-roam-link-brackets invisible nil)
-           '(face org-roam-link-brackets invisible t)))
+         `(face org-roam-link-brackets invisible ,org-roam-link-hide-brackets))
         (add-text-properties
          (match-beginning 4)
          (match-end 4)
-         (if org-roam-link-show-brackets
-             '(face org-roam-link-brackets invisible nil)
-           '(face org-roam-link-brackets invisible t)))
+         `(face org-roam-link-brackets invisible ,org-roam-link-hide-brackets))
         ;; Check if link is plain or Descriptive
         (if (not (string-match-p "\\]\\[" (buffer-substring start end)))
             ;; If plain, hide roam: prefix
@@ -127,9 +140,9 @@ link has brackets."
              (match-end 2)
              '(invisible t))
           ;; If descriptive, hide roam: and path. Optionally show single brackets
-          (progn (if org-roam-link-show-brackets
-                     (add-text-properties (+ start 1) (- end 1) '(invisible t))
-                   (add-text-properties start end '(invisible t)))
+          (progn (if org-roam-link-hide-brackets
+                     (add-text-properties start end '(invisible t))
+                   (add-text-properties (+ start 1) (- end 1) '(invisible t)))
                  (save-match-data
                    (goto-char start)
                    (re-search-forward org-link-bracket-re end t)
@@ -146,7 +159,7 @@ PATH is a potential TITLE/ALIAS of an existing Org-roam note."
         (backlink-dest (org-roam--get-file-from-title path)))
     (string= current backlink-dest)))
 
-(defun org-roam-link--roam-link-face (path)
+(defun org-roam-link--face (path)
   "Conditional face for custom roam-links.
 Applies `org-roam-link-current' if PATH corresponds to the
 currently opened Org-roam file in the backlink buffer,
@@ -176,9 +189,9 @@ with roam-link PATHs."
     (if file-path
         (find-file file-path)
       (if (org-roam-capture--in-process-p)
-          (user-error "Org-roam capture in process")
-        (let ((org-roam-capture--info (list (cons 'title title-no-tags)
-                                            (cons 'slug (org-roam--title-to-slug title-no-tags))))
+          (user-error "Nested Org-roam capture processes not supported")
+        (let ((org-roam-capture--info `((title . ,title-no-tags)
+                                        (slug  . ,(org-roam--title-to-slug title-no-tags))))
               (org-roam-capture--context 'title))
           (add-hook 'org-capture-after-finalize-hook #'org-roam-capture--find-file-h)
           (org-roam-capture--capture))))))
@@ -270,31 +283,45 @@ indicate the link-type the buffer should convert to."
             (org-roam-link--convert-roam-to-file-link elem)))
         (org-next-link)))))
 
-(defun org-roam-link--auto-create-roam-link-file (title &optional manual)
-  "Call `org-roam-capture' with a template using :immediate-finish t.
+(defun org-roam-link--auto-create-file (title &optional manual)
+  "Call `org-roam-capture--capture' with `org-roam-link-auto-template'.
+If `org-roam-link-auto-template-key' is non-nil, use custom template key with
+`org-roam-capture-templates' instead.
 TITLE is the title for the file to be created.
-MANUAL is boolean allowing manual selection of capture template(s)."
-  (let ((org-roam-capture--info (list (cons 'title title)
-                                      (cons 'slug (org-roam--title-to-slug title))))
+If MANUAL is non-nil, allow manual selection of capture template."
+  (let ((org-roam-capture--info `((title . ,title)
+                                  (slug  . ,(org-roam--title-to-slug title))))
         (org-roam-capture--context 'title))
-    (if manual (org-roam-capture--capture)
-      (org-roam-capture--capture :keys "a"))))
+    (cond (manual (org-roam-capture--capture))
+          (org-roam-link-auto-template-key
+           (org-roam-capture--capture :keys org-roam-link-auto-template-key))
+          (t
+           (let ((org-roam-capture-templates org-roam-link-auto-template))
+             (org-roam-capture--capture :keys (caar org-roam-link-auto-template)))))))
 
-(defun org-roam-link-auto-create-roam-links-in-buffer (&optional manual)
-  "Create all non-existant roam-link files in current buffer.
-MANUAL is boolean which allows manual selection of `org-roam-capture'
-templates for each file created.
-If called with PREFIX `C-u' then manual is non-nil."
+(defun org-roam-link-auto-create-links-in-buffer (&optional manual)
+  "Create all non-existent roam-link files in current buffer.
+If MANUAL is non-nil, prompt for template with `org-roam-capture--capture'.
+Templates MUST use :immediate-finish t, or only the first non-immediate capture
+will be saved correctly."
   (interactive "P")
   (when (org-roam--org-roam-file-p)
-    (org-element-map (org-element-parse-buffer) 'link
-      (lambda (link)
-        (let* ((type (org-element-property :type link))
-               (path (org-element-property :path link))
-               (is-title (if (string= type "roam") t nil))
-               (roam-file (if is-title (org-roam--get-file-from-title path) t)))
-          (unless roam-file
-            (org-roam-link--auto-create-roam-link-file path manual)))))))
+    (save-excursion
+      (org-element-map (org-element-parse-buffer) 'link
+        (lambda (link)
+          (let* ((type (org-element-property :type link))
+                 (path (org-element-property :path link))
+                 (roam-file (if (string= type "roam") (org-roam--get-file-from-title path) t)))
+            (unless roam-file
+              (let* ((start (org-element-property :begin link))
+                     (end (org-element-property :end link))
+                     (ov (make-overlay start end)))
+                (progn
+                  (goto-char end)
+                  (recenter)
+                  (overlay-put ov 'face 'highlight)
+                  (org-roam-link--auto-create-file path manual)
+                  (delete-overlay ov))))))))))
 
 (defun org-roam-link--current-buffer-roam-link-titles ()
   "Return a list of unique roam-link titles in the current buffer."
@@ -344,7 +371,7 @@ ADD-TAG is non-nil when completion is called with prefix `C-u'."
        (-distinct)))
 
 (defun org-roam-link--status-message ()
-  "Send roam-link status message to minibuffer."
+  "Print roam-link status message to minibuffer."
   (when (and org-roam-verbose
              (string= major-mode "org-mode"))
     (let ((elem (org-element-context)))
@@ -363,7 +390,7 @@ ADD-TAG is non-nil when completion is called with prefix `C-u'."
                 (org-roam-message "file: %s → %s" file-path raw-link)
               (org-roam-message "No file found in db → %s" raw-link))))))))
 
-(defun org-roam-link-show-link-messages ()
+(defun org-roam-link-show-messages ()
   "Enable minibuffer status message for roam-links.
 Follows example of `org-ref' and displays on idle timer."
   (interactive)
@@ -372,30 +399,19 @@ Follows example of `org-ref' and displays on idle timer."
         (setq org-roam-link-message-timer
               (run-with-idle-timer 0.5 t #'org-roam-link--status-message)))))
 
-(defun org-roam-link-cancel-link-messages ()
+(defun org-roam-link-cancel-messages ()
   "Disable minibuffer status message for roam-links."
   (interactive)
   (cancel-timer org-roam-link-message-timer)
   (setq org-roam-link-message-timer nil))
 
-(defun org-roam-link-insert-link (&optional add-tag)
-  "Shortcut to insert roam-link with standard completion prompt.
-ADD-TAG is non-nil when called with prefix `C-u' and provides completion
-for a link-tag after adding the roam-link title."
-  (interactive "P")
-  (insert "[[" (org-roam-link--completion add-tag) "]]"))
-
-(defun org-roam-link-insert-syntax ()
-  "Shortcut to insert roam-link syntax without completion.
-Move point inside brackets, ready for roam title entry."
+(defun org-roam-link-insert (&optional title)
+  "Insert a roam-link with TITLE.
+If TITLE is nil, prompt for one."
   (interactive)
-  (insert "[[roam:]]")
-  (backward-char 2))
-
-(defun org-roam-link-exit-link ()
-  "When point is in roam-link, advance point forward out of the link."
-  (interactive)
-  (goto-char (org-element-property :end (org-element-context))))
+  (if title
+      (insert "[[" (concat "roam:" title) "]]")
+    (insert "[[" (org-roam-link--completion) "]]")))
 
 (defun org-roam-link-add-link-tag ()
   "Prompt for link-tag completion and add to the end of the roam-link path."

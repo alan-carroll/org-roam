@@ -5,8 +5,8 @@
 ;; Author: Jethro Kuan <jethrokuan95@gmail.com>
 ;; URL: https://github.com/org-roam/org-roam
 ;; Keywords: org-mode, roam, convenience
-;; Version: 1.1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.13") (f "0.17.2") (s "1.12.0") (org "9.3") (emacsql "3.0.0") (emacsql-sqlite "1.0.0"))
+;; Version: 1.1.1
+;; Package-Requires: ((emacs "26.1") (dash "2.13") (f "0.17.2") (s "1.12.0") (org "9.3") (emacsql "3.0.0") (emacsql-sqlite3 "1.0.0"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -36,14 +36,18 @@
 
 (defvar org-roam-verbose)
 
-(defmacro org-roam--with-temp-buffer (&rest body)
+(defmacro org-roam--with-temp-buffer (file &rest body)
   "Execute BODY within a temp buffer.
-Like `with-temp-buffer', but propagates `org-roam-directory'."
-  (declare (indent 0) (debug t))
+Like `with-temp-buffer', but propagates `org-roam-directory'.
+If FILE, set `org-roam-temp-file-name' to file and insert its contents."
+  (declare (indent 1) (debug t))
   (let ((current-org-roam-directory (make-symbol "current-org-roam-directory")))
     `(let ((,current-org-roam-directory org-roam-directory))
        (with-temp-buffer
          (let ((org-roam-directory ,current-org-roam-directory))
+           (when ,file
+             (insert-file-contents ,file)
+             (setq-local org-roam-file-name ,file))
            ,@body)))))
 
 (defmacro org-roam--with-template-error (templates &rest body)
